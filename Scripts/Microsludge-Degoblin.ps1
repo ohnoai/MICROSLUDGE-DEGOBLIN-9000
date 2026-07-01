@@ -123,6 +123,11 @@ function Set-RegDword {
                 $outputText = "reg.exe exited with code ${exitCode}: $outputText"
             }
 
+            if ($Name -eq "TaskbarDa" -and $outputText -match "Access is denied") {
+                Write-Log "NOTE: TaskbarDa write blocked (Access is denied). Expected on current Windows builds and cosmetic; the widgets/news feature is governed by the HKLM Dsh AllowNewsAndInterests policy, which is applied."
+                return
+            }
+
             Write-Log "ERROR: Registry write failed: $target = $Value. $outputText"
             return
         }
