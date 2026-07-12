@@ -11,6 +11,7 @@ param(
     [switch]$AlwaysApply,
     [switch]$BlockOneDrive,
     [switch]$RemoveOneDrive,
+    [switch]$RemoveWidgets,
     [switch]$DisableEdgeUpdates,
     [switch]$DisableWindowsAI,
     [switch]$SkipCopilot,
@@ -231,6 +232,7 @@ $xaml = @'
                     <TextBlock Text="Stronger" Style="{StaticResource GroupTitle}"/>
                     <CheckBox x:Name="CheckBlockOneDrive" Content="Block OneDrive sync"/>
                     <CheckBox x:Name="CheckRemoveOneDrive" Content="Uninstall OneDrive"/>
+                    <CheckBox x:Name="CheckRemoveWidgets" Content="Remove Widgets package"/>
                     <CheckBox x:Name="CheckDisableEdgeUpdates" Content="Disable Edge updates"/>
                     <CheckBox x:Name="CheckWindowsAI" Content="Windows AI cleanup" IsEnabled="False" ToolTip="Run the AI report first." ToolTipService.ShowOnDisabled="True"/>
 
@@ -303,6 +305,7 @@ $CheckOutlook = $window.FindName("CheckOutlook")
 $CheckConsumerContent = $window.FindName("CheckConsumerContent")
 $CheckBlockOneDrive = $window.FindName("CheckBlockOneDrive")
 $CheckRemoveOneDrive = $window.FindName("CheckRemoveOneDrive")
+$CheckRemoveWidgets = $window.FindName("CheckRemoveWidgets")
 $CheckDisableEdgeUpdates = $window.FindName("CheckDisableEdgeUpdates")
 $CheckWindowsAI = $window.FindName("CheckWindowsAI")
 $CheckAlwaysApply = $window.FindName("CheckAlwaysApply")
@@ -443,6 +446,7 @@ function Get-GuiSwitchValues {
         AlwaysApply = [bool]$CheckAlwaysApply.IsChecked
         BlockOneDrive = [bool]$CheckBlockOneDrive.IsChecked
         RemoveOneDrive = [bool]$CheckRemoveOneDrive.IsChecked
+        RemoveWidgets = [bool]$CheckRemoveWidgets.IsChecked
         DisableEdgeUpdates = [bool]$CheckDisableEdgeUpdates.IsChecked
         DisableWindowsAI = ($CheckWindowsAI.IsEnabled -and [bool]$CheckWindowsAI.IsChecked)
         SkipCopilot = -not [bool]$CheckCopilot.IsChecked
@@ -459,6 +463,7 @@ function Set-GuiSwitchValues {
     $CheckAlwaysApply.IsChecked = [bool]$Values.AlwaysApply
     $CheckBlockOneDrive.IsChecked = [bool]$Values.BlockOneDrive
     $CheckRemoveOneDrive.IsChecked = [bool]$Values.RemoveOneDrive
+    $CheckRemoveWidgets.IsChecked = [bool]$Values.RemoveWidgets
     $CheckDisableEdgeUpdates.IsChecked = [bool]$Values.DisableEdgeUpdates
     $CheckWindowsAI.IsChecked = [bool]$Values.DisableWindowsAI
     $CheckCopilot.IsChecked = -not [bool]$Values.SkipCopilot
@@ -689,7 +694,7 @@ function Start-GuiWizard {
     })
     $steps.Add([pscustomobject]@{
         Title = "Ads, suggestions, and widgets"
-        Body = "This turns off Microsoft consumer-content suggestions, ad ID behavior, tailored experiences, activity upload, widgets/news policy, and similar Windows nags."
+        Body = "This turns off Microsoft consumer-content suggestions, ad ID behavior, tailored experiences, search highlights, activity upload, widgets/news policy, and similar Windows nags. It also stops the Widgets platform background process each run."
         ChoiceText = "Include ads, suggestions, and widgets cleanup"
         Control = $CheckConsumerContent
     })
@@ -704,6 +709,12 @@ function Start-GuiWizard {
         Body = "This tries to run the local OneDrive uninstaller. Pick this only when OneDrive should be removed, not merely quieted."
         ChoiceText = "Uninstall OneDrive"
         Control = $CheckRemoveOneDrive
+    })
+    $steps.Add([pscustomobject]@{
+        Title = "Remove Widgets package"
+        Body = "This is stronger than the default widgets cleanup, which only stops the background process each run. This removes the Widgets Platform Runtime Appx package outright. Windows Update may reinstall it later, which is exactly the kind of resurfacing this tool watches for."
+        ChoiceText = "Remove Widgets Platform Runtime package"
+        Control = $CheckRemoveWidgets
     })
     $steps.Add([pscustomobject]@{
         Title = "Disable Edge updates"
@@ -885,6 +896,7 @@ $optionControls = @(
     $CheckConsumerContent,
     $CheckBlockOneDrive,
     $CheckRemoveOneDrive,
+    $CheckRemoveWidgets,
     $CheckDisableEdgeUpdates,
     $CheckWindowsAI,
     $CheckAlwaysApply
@@ -899,6 +911,7 @@ Set-GuiSwitchValues -Values @{
     AlwaysApply = $AlwaysApply.IsPresent
     BlockOneDrive = $BlockOneDrive.IsPresent
     RemoveOneDrive = $RemoveOneDrive.IsPresent
+    RemoveWidgets = $RemoveWidgets.IsPresent
     DisableEdgeUpdates = $DisableEdgeUpdates.IsPresent
     DisableWindowsAI = $DisableWindowsAI.IsPresent
     SkipCopilot = $SkipCopilot.IsPresent
@@ -1004,6 +1017,29 @@ $window.Add_ContentRendered({
         }
     }
     Add-GuiLog "Run the AI report before enabling Windows AI cleanup."
+
+    $updateState = Get-MicrosludgeUpdateState -InstallRoot $installRoot
+    if ($updateState) {
+        if ($updateState.LatestKnownVersion -and $updateState.LatestKnownVersion -ne $packageVersion) {
+            Add-GuiLog "NOTICE: v$($updateState.LatestKnownVersion) is available on GitHub (you have v$packageVersion)."
+        }
+
+        $pending = @($updateState.PendingAcknowledgment)
+        if ($pending.Count -gt 0) {
+            $lines = foreach ($switchName in $pending) {
+                "  -$switchName : $(Get-MicrosludgeSwitchDescription -Name $switchName)"
+            }
+            Add-GuiLog "NOTICE: new option(s) since your last install: $($pending -join ', ')"
+
+            Show-GuiMessage `
+                -Title "New cleanup option(s) available" `
+                -Message "This version added option(s) not in your saved configuration:`r`n`r`n$($lines -join "`r`n")`r`n`r`nThey stay off by default. Check the Stronger section to turn any on, then reinstall the scheduled task to save the choice." `
+                -Icon Information
+
+            Clear-MicrosludgePendingAcknowledgment -InstallRoot $installRoot
+        }
+    }
+
     Update-GuiState
     Update-GuiSummary
 })

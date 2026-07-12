@@ -11,6 +11,7 @@ param(
     [switch]$AlwaysApply,
     [switch]$BlockOneDrive,
     [switch]$RemoveOneDrive,
+    [switch]$RemoveWidgets,
     [switch]$DisableEdgeUpdates,
     [switch]$DisableWindowsAI,
     [switch]$SkipCopilot,
@@ -112,6 +113,7 @@ $switchValues = @{
     AlwaysApply = $AlwaysApply.IsPresent
     BlockOneDrive = $BlockOneDrive.IsPresent
     RemoveOneDrive = $RemoveOneDrive.IsPresent
+    RemoveWidgets = $RemoveWidgets.IsPresent
     DisableEdgeUpdates = $DisableEdgeUpdates.IsPresent
     DisableWindowsAI = $DisableWindowsAI.IsPresent
     SkipCopilot = $SkipCopilot.IsPresent
@@ -136,6 +138,28 @@ Remove-MicrosludgeOldLogs `
     -OlderThanDays 90 `
     -ExcludePath $logPath `
     -Logger { param($Message) Write-AutoLog $Message }
+
+$installRootForUpdateCheck = Get-MicrosludgeInstallRoot
+
+try {
+    $updateStatus = Test-MicrosludgeUpdateAvailable -InstallRoot $installRootForUpdateCheck -CurrentVersion $packageVersion
+    if ($updateStatus.UpdateAvailable) {
+        Write-AutoLog "NOTICE: A newer Microsludge Degoblin release is available: $($updateStatus.LatestVersion) (installed: $($updateStatus.CurrentVersion)). Get it from https://github.com/jtcristina/Microsludge-Degoblin/releases"
+        Show-MicrosludgeBalloonNotification `
+            -Title "Microsludge Degoblin update available" `
+            -Message "v$($updateStatus.LatestVersion) is out (you have v$($updateStatus.CurrentVersion)). Check the Releases page when you get a chance." `
+            -Icon "Info" | Out-Null
+    } elseif ($updateStatus.Checked) {
+        Write-AutoLog "Installed version is current (checked GitHub: $($updateStatus.LatestVersion))."
+    }
+} catch {
+    Write-AutoLog "WARNING: Update check failed: $($_.Exception.Message)"
+}
+
+$updateState = Get-MicrosludgeUpdateState -InstallRoot $installRootForUpdateCheck
+if ($updateState -and @($updateState.PendingAcknowledgment).Count -gt 0) {
+    Write-AutoLog "NOTICE: New option(s) awaiting review: $(@($updateState.PendingAcknowledgment) -join ', '). Open the GUI or console walkthrough to decide."
+}
 
 if (-not (Test-Path -LiteralPath $targetScript)) {
     Write-AutoLog "ERROR: Target script not found: $targetScript"

@@ -436,7 +436,7 @@ function Start-Wizard {
     $includeConsumerContent = Read-WizardYesNo `
         -Question "Include Microsoft ads, suggestions, widgets, and SoftLanding cleanup?" `
         -DefaultYes $true `
-        -Explanation "Highly recommended: low-risk cleanup for noisy Windows ads, suggestions, widgets/news, activity upload, and SoftLanding tasks."
+        -Explanation "Highly recommended: low-risk cleanup for noisy Windows ads, suggestions, search highlights, widgets/news, activity upload, and SoftLanding tasks. Also stops the Widgets platform background process each run."
 
     $wizardInstallTask = $false
     $wizardAlwaysApply = $false
@@ -611,6 +611,28 @@ if (-not (Test-MicrosludgeIsAdmin)) {
     Write-Host "No cleanup, dry run, or scheduled-task install was started."
     Write-Host ""
     exit 1
+}
+
+$installRoot = Get-MicrosludgeInstallRoot
+$updateState = Get-MicrosludgeUpdateState -InstallRoot $installRoot
+if ($updateState) {
+    $packageVersion = Get-MicrosludgeVersion -Root $repoRoot
+    if ($updateState.LatestKnownVersion -and $updateState.LatestKnownVersion -ne $packageVersion) {
+        Write-Host "NOTICE: v$($updateState.LatestKnownVersion) is available on GitHub (you have v$packageVersion)."
+        Write-Host "        https://github.com/jtcristina/Microsludge-Degoblin/releases"
+        Write-Host ""
+    }
+
+    $pending = @($updateState.PendingAcknowledgment)
+    if ($pending.Count -gt 0) {
+        Write-Host "NOTICE: new option(s) since your last install:"
+        foreach ($switchName in $pending) {
+            Write-Host "  -$switchName : $(Get-MicrosludgeSwitchDescription -Name $switchName)"
+        }
+        Write-Host "These stay off until you choose them here or in the GUI, then reinstall the task to save the choice."
+        Write-Host ""
+        Clear-MicrosludgePendingAcknowledgment -InstallRoot $installRoot
+    }
 }
 
 if ($Wizard) {

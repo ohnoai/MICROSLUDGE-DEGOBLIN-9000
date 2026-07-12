@@ -76,6 +76,7 @@ function Get-MicrosludgeCleanupSwitchNames {
     return @(
         "BlockOneDrive",
         "RemoveOneDrive",
+        "RemoveWidgets",
         "DisableEdgeUpdates",
         "DisableWindowsAI",
         "SkipCopilot",
@@ -124,6 +125,253 @@ function Get-MicrosludgeOptionSummary {
     }
 
     return $enabled -join ", "
+}
+
+function Get-MicrosludgeSwitchDescription {
+    param([string]$Name)
+
+    $descriptions = @{
+        BlockOneDrive = "Blocks OneDrive file sync by machine policy."
+        RemoveOneDrive = "Uninstalls OneDrive when a local installer is found."
+        RemoveWidgets = "Removes the Widgets Platform Runtime package outright, not just its background process."
+        DisableEdgeUpdates = "Disables Edge update scheduled tasks and services."
+        DisableWindowsAI = "Disables Recall, Click to Do, Settings AI agent, and Paint AI policies."
+        SkipCopilot = "Skips Copilot package and policy cleanup."
+        SkipOneDrive = "Skips OneDrive process/startup/task cleanup."
+        SkipEdge = "Skips Edge background/startup/GameAssist cleanup."
+        SkipOutlook = "Skips new Outlook package cleanup."
+        SkipConsumerContent = "Skips ads/suggestions/widgets/search-highlights cleanup."
+        AlwaysApply = "Runs cleanup at every logon instead of only after Windows Update evidence."
+    }
+
+    if ($descriptions.ContainsKey($Name)) {
+        return $descriptions[$Name]
+    }
+
+    return "New option. See README.md or WALKTHROUGH.txt for details."
+}
+
+function Get-MicrosludgeUpdateStatePath {
+    param([string]$InstallRoot)
+
+    return (Join-Path $InstallRoot "Update-State.json")
+}
+
+function Get-MicrosludgeUpdateState {
+    param([string]$InstallRoot)
+
+    $path = Get-MicrosludgeUpdateStatePath -InstallRoot $InstallRoot
+    if (-not (Test-Path -LiteralPath $path)) {
+        return $null
+    }
+
+    try {
+        return (Get-Content -LiteralPath $path -Raw -ErrorAction Stop | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+function Set-MicrosludgeUpdateState {
+    param(
+        [string]$InstallRoot,
+        [hashtable]$Updates
+    )
+
+    $existing = Get-MicrosludgeUpdateState -InstallRoot $InstallRoot
+    $state = [ordered]@{
+        KnownSwitchNames = @()
+        PendingAcknowledgment = @()
+        LastGitHubCheckAt = $null
+        LatestKnownVersion = $null
+    }
+
+    if ($existing) {
+        foreach ($key in @($state.Keys)) {
+            if ($existing.PSObject.Properties.Name -contains $key) {
+                $state[$key] = $existing.$key
+            }
+        }
+    }
+
+    foreach ($key in $Updates.Keys) {
+        $state[$key] = $Updates[$key]
+    }
+
+    $state["SavedAt"] = (Get-Date -Format "o")
+
+    $path = Get-MicrosludgeUpdateStatePath -InstallRoot $InstallRoot
+    ($state | ConvertTo-Json) | Set-Content -LiteralPath $path -Encoding UTF8
+
+    return $state
+}
+
+function Update-MicrosludgeKnownSwitches {
+    param([string]$InstallRoot)
+
+    $current = @(Get-MicrosludgeWrapperSwitchNames)
+    $existing = Get-MicrosludgeUpdateState -InstallRoot $InstallRoot
+
+    if (-not $existing) {
+        Set-MicrosludgeUpdateState -InstallRoot $InstallRoot -Updates @{
+            KnownSwitchNames = $current
+            PendingAcknowledgment = @()
+        } | Out-Null
+        return @()
+    }
+
+    $previousKnown = @($existing.KnownSwitchNames)
+    $previousPending = @($existing.PendingAcknowledgment)
+    $newlyDiscovered = @($current | Where-Object { $_ -notin $previousKnown })
+    $mergedPending = @($previousPending + $newlyDiscovered | Select-Object -Unique)
+
+    Set-MicrosludgeUpdateState -InstallRoot $InstallRoot -Updates @{
+        KnownSwitchNames = $current
+        PendingAcknowledgment = $mergedPending
+    } | Out-Null
+
+    return $newlyDiscovered
+}
+
+function Clear-MicrosludgePendingAcknowledgment {
+    param([string]$InstallRoot)
+
+    Set-MicrosludgeUpdateState -InstallRoot $InstallRoot -Updates @{
+        PendingAcknowledgment = @()
+    } | Out-Null
+}
+
+function Compare-MicrosludgeVersion {
+    param(
+        [string]$Left,
+        [string]$Right
+    )
+
+    function ConvertTo-MicrosludgeVersionParts {
+        param([string]$Value)
+
+        $core = ($Value -split '-')[0]
+        $parts = @($core -split '\.' | ForEach-Object {
+            $n = 0
+            [void][int]::TryParse($_, [ref]$n)
+            $n
+        })
+        while ($parts.Count -lt 3) {
+            $parts += 0
+        }
+        return $parts
+    }
+
+    $leftParts = ConvertTo-MicrosludgeVersionParts -Value $Left
+    $rightParts = ConvertTo-MicrosludgeVersionParts -Value $Right
+
+    for ($i = 0; $i -lt 3; $i++) {
+        if ($leftParts[$i] -gt $rightParts[$i]) { return 1 }
+        if ($leftParts[$i] -lt $rightParts[$i]) { return -1 }
+    }
+
+    return 0
+}
+
+function Test-MicrosludgeUpdateAvailable {
+    param(
+        [string]$InstallRoot,
+        [string]$CurrentVersion,
+        [string]$RepoSlug = "jtcristina/Microsludge-Degoblin",
+        [int]$CacheHours = 24,
+        [switch]$Force
+    )
+
+    $state = Get-MicrosludgeUpdateState -InstallRoot $InstallRoot
+    $now = Get-Date
+
+    $shouldCheck = $Force.IsPresent
+    if (-not $shouldCheck) {
+        if (-not $state -or -not $state.LastGitHubCheckAt) {
+            $shouldCheck = $true
+        } else {
+            try {
+                $lastChecked = [datetime]$state.LastGitHubCheckAt
+                if (($now - $lastChecked).TotalHours -ge $CacheHours) {
+                    $shouldCheck = $true
+                }
+            } catch {
+                $shouldCheck = $true
+            }
+        }
+    }
+
+    $latestVersion = if ($state) { $state.LatestKnownVersion } else { $null }
+
+    if ($shouldCheck) {
+        try {
+            $previousProtocol = [Net.ServicePointManager]::SecurityProtocol
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            try {
+                $response = Invoke-RestMethod `
+                    -Uri "https://api.github.com/repos/$RepoSlug/releases/latest" `
+                    -Headers @{ "User-Agent" = "Microsludge-Degoblin" } `
+                    -TimeoutSec 10 `
+                    -ErrorAction Stop
+            } finally {
+                [Net.ServicePointManager]::SecurityProtocol = $previousProtocol
+            }
+
+            $latestVersion = ($response.tag_name -replace '^v', '')
+            Set-MicrosludgeUpdateState -InstallRoot $InstallRoot -Updates @{
+                LastGitHubCheckAt = $now.ToString("o")
+                LatestKnownVersion = $latestVersion
+            } | Out-Null
+        } catch {
+            if (-not $state) {
+                return [pscustomobject]@{
+                    Checked = $false
+                    UpdateAvailable = $false
+                    LatestVersion = $null
+                    CurrentVersion = $CurrentVersion
+                    Error = $_.Exception.Message
+                }
+            }
+        }
+    }
+
+    $updateAvailable = ($latestVersion -and (Compare-MicrosludgeVersion -Left $latestVersion -Right $CurrentVersion) -gt 0)
+
+    return [pscustomobject]@{
+        Checked = $shouldCheck
+        UpdateAvailable = $updateAvailable
+        LatestVersion = $latestVersion
+        CurrentVersion = $CurrentVersion
+    }
+}
+
+function Show-MicrosludgeBalloonNotification {
+    param(
+        [string]$Title,
+        [string]$Message,
+        [ValidateSet("Info", "Warning")]
+        [string]$Icon = "Info"
+    )
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+
+        $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
+        $notifyIcon.Icon = [System.Drawing.SystemIcons]::Information
+        $notifyIcon.Visible = $true
+        $notifyIcon.BalloonTipTitle = $Title
+        $notifyIcon.BalloonTipText = $Message
+        $notifyIcon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::$Icon
+        $notifyIcon.ShowBalloonTip(10000)
+
+        Start-Sleep -Seconds 6
+        $notifyIcon.Visible = $false
+        $notifyIcon.Dispose()
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 function Remove-MicrosludgeOldLogs {
