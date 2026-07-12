@@ -9,6 +9,7 @@ param(
     [switch]$AlwaysApply,
     [switch]$BlockOneDrive,
     [switch]$RemoveOneDrive,
+    [switch]$RemoveWidgets,
     [switch]$DisableEdgeUpdates,
     [switch]$DisableWindowsAI,
     [switch]$SkipCopilot,
@@ -178,6 +179,7 @@ $switchValues = @{
     AlwaysApply = $AlwaysApply.IsPresent
     BlockOneDrive = $BlockOneDrive.IsPresent
     RemoveOneDrive = $RemoveOneDrive.IsPresent
+    RemoveWidgets = $RemoveWidgets.IsPresent
     DisableEdgeUpdates = $DisableEdgeUpdates.IsPresent
     DisableWindowsAI = $DisableWindowsAI.IsPresent
     SkipCopilot = $SkipCopilot.IsPresent
@@ -230,12 +232,23 @@ Register-ScheduledTask `
     -Description "Runs Microsludge Degoblin $installedVersion after logon only when Windows Update evidence is found. Options: $optionSummary." `
     -Force | Out-Null
 
+$newSwitches = @(Update-MicrosludgeKnownSwitches -InstallRoot $installRoot)
+
 Write-Host "Installed package copy: $installRoot"
 Write-Host "Installed version: $installedVersion"
 Write-Host "Scheduled task wrapper: $installedWrapper"
 Write-Host "Installed logs: $installedLogRoot"
 Write-Host "Start Menu folder: $startMenuFolder"
 Write-Host "Apps entry: $installedAppRegistryPath"
+
+if ($newSwitches.Count -gt 0) {
+    Write-Host ""
+    Write-Host "New option(s) since your last install:"
+    foreach ($switchName in $newSwitches) {
+        Write-Host "  -$switchName : $(Get-MicrosludgeSwitchDescription -Name $switchName)"
+    }
+    Write-Host "These stay off until you choose them in the GUI or console walkthrough."
+}
 
 Get-ScheduledTask -TaskName $taskName -TaskPath $taskPath |
     Select-Object TaskName, TaskPath, State

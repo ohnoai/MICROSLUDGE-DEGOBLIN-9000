@@ -2,7 +2,7 @@
 
 # Microsludge Degoblin
 
-Current version: `1.0.1` (see `VERSION`).
+Current version: `1.3.0` (see `VERSION`).
 
 Microsludge Degoblin is a Windows cleanup tool for Microsoft components that keep coming back after updates.
 
@@ -51,8 +51,8 @@ That means you can clean the machine once, then let Microsludge Degoblin keep th
 - Microsoft.OutlookForWindows app/provisioned package
 - Microsoft.Edge.GameAssist app/provisioned package
 - Edge browser background mode, startup boost, first-run, and sidebar policies
-- Microsoft consumer content, ads, suggestions, tailored experiences, activity upload
-- Widgets/news taskbar policy and user setting
+- Microsoft consumer content, ads, suggestions, search highlights, tailored experiences, activity upload
+- Widgets/news taskbar policy, user setting, and platform background process
 - SoftLanding, creative, and deferral scheduled tasks
 
 ## Default Non-Targets
@@ -63,6 +63,7 @@ That means you can clean the machine once, then let Microsludge Degoblin keep th
 - Does not remove or block WebView2
 - Does not touch unrelated system components, device drivers, security tools, sync tools, or vendor utilities
 - Does not uninstall OneDrive unless `-RemoveOneDrive` is explicitly passed
+- Does not remove the Widgets Platform Runtime package unless `-RemoveWidgets` is explicitly passed
 - Does not disable Edge update services/tasks unless `-DisableEdgeUpdates` is explicitly passed
 
 ## Usage
@@ -166,6 +167,7 @@ Optional stronger switches:
 - `-AlwaysApply`: Scheduled-task installer/wrapper option. Runs cleanup at every scheduled logon launch instead of only when Windows Update evidence is found.
 - `-BlockOneDrive`: Sets the Windows policy that blocks OneDrive file sync.
 - `-RemoveOneDrive`: Runs `OneDriveSetup.exe /uninstall` when a local OneDrive installer is found.
+- `-RemoveWidgets`: Removes the Widgets Platform Runtime Appx package, not just its background process. Windows Update may reinstall it later.
 - `-DisableEdgeUpdates`: Disables MicrosoftEdgeUpdate scheduled tasks and `edgeupdate` / `edgeupdatem` services. This can also affect WebView2 update freshness, so it is opt-in.
 - `-DisableWindowsAI`: Applies Windows AI policies for Recall availability/snapshots, Click to Do, Settings AI agent, and Paint AI features. This does not remove the Recall optional feature bits.
 - `-SkipRestorePoint`: Advanced option for direct apply runs. Skips the automatic restore point request. The GUI and console walkthrough use this after handling the restore point prompt themselves.
@@ -239,6 +241,12 @@ See `.\WALKTHROUGH.txt`.
 ## Versioning
 
 The package version lives in `VERSION` and uses `major.minor.patch` numbering. Scripts log the version at startup, and the scheduled-task installer writes the installed version into the task description.
+
+## Update Checks
+
+The scheduled task checks GitHub for newer releases at most once per day (cached in `Update-State.json` inside the installed copy). It never downloads or runs new code automatically — it only logs a NOTICE and shows a Windows tray notification pointing at the [Releases page](https://github.com/jtcristina/Microsludge-Degoblin/releases). Downloading and installing an update is always a manual, explicit step.
+
+Separately, if a reinstall introduces a new opt-in cleanup option you haven't seen before, it stays off by default and gets flagged: a log NOTICE, a tray notification, and a one-time banner the next time you open the GUI or console walkthrough. Reviewing the banner (or opening the walkthrough) clears the flag either way; a new option only turns on if you explicitly enable it.
 
 ## Feed the Goblin
 

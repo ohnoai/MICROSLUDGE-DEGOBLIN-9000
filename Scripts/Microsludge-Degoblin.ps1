@@ -11,8 +11,8 @@ Default targets:
   - Microsoft.OutlookForWindows
   - Microsoft.Edge.GameAssist
   - Edge background/startup/sidebar policies
-  - Microsoft consumer content, suggestions, ads, tailored experiences, activity upload
-  - Widgets/news taskbar setting
+  - Microsoft consumer content, suggestions, ads, search highlights, tailored experiences, activity upload
+  - Widgets/news taskbar setting and platform process
   - SoftLanding scheduled tasks
 
 Default non-targets:
@@ -21,6 +21,7 @@ Default non-targets:
   - Does not remove Edge browser itself
   - Does not remove or block WebView2
   - Does not uninstall OneDrive unless -RemoveOneDrive is passed
+  - Does not remove the Widgets Platform Runtime package unless -RemoveWidgets is passed
   - Does not disable Edge update services/tasks unless -DisableEdgeUpdates is passed
   - Does not disable Windows AI policies unless -DisableWindowsAI is passed
 
@@ -34,6 +35,7 @@ param(
     [switch]$Apply,
     [switch]$BlockOneDrive,
     [switch]$RemoveOneDrive,
+    [switch]$RemoveWidgets,
     [switch]$DisableEdgeUpdates,
     [switch]$DisableWindowsAI,
     [switch]$SkipRestorePoint,
@@ -163,6 +165,41 @@ function Write-RegDwordCheck {
     }
 }
 
+function Invoke-RegDwordFixGroup {
+    param(
+        [string]$Description,
+        [array]$Entries
+    )
+
+    $drifted = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in $Entries) {
+        $drivePath = $entry.Path -replace '^(HKLM|HKCU)\\', '$1:\'
+        $state = Get-MicrosludgeRegistryValueState -Path $drivePath -Name $entry.Name
+        if (-not $state.Exists -or "$($state.Value)" -ne "$($entry.Value)") {
+            $found = if ($state.Exists) { "$($state.Value)" } else { "missing" }
+            $drifted.Add("$($entry.Path)\$($entry.Name) (expected $($entry.Value), found $found)")
+        }
+    }
+
+    if ($Apply) {
+        Write-Log "FIX: $Description"
+        try {
+            foreach ($entry in $Entries) {
+                Set-RegDword -Path $entry.Path -Name $entry.Name -Value $entry.Value
+            }
+        } catch {
+            Write-Log "ERROR during '$Description': $($_.Exception.Message)"
+        }
+    } elseif ($drifted.Count -gt 0) {
+        Write-Log "WOULD FIX: $Description"
+        foreach ($item in $drifted) {
+            Write-Log "  Drifted: $item"
+        }
+    } else {
+        Write-Log "OK: $Description already applied. No drift found."
+    }
+}
+
 function Write-HumanSummary {
     $included = New-Object System.Collections.Generic.List[string]
     $skipped = New-Object System.Collections.Generic.List[string]
@@ -220,8 +257,14 @@ function Write-HumanSummary {
     }
 
     if (-not $SkipConsumerContent) {
-        $included.Add("Microsoft ads/suggestions/widgets/activity/SoftLanding cleanup")
+        $included.Add("Microsoft ads/suggestions/widgets/search-highlights/activity/SoftLanding cleanup")
         $recommendations.Add("Highly recommended: Microsoft consumer-content cleanup, because it is low-risk and targets noisy Windows defaults.")
+        if ($RemoveWidgets) {
+            $stronger.Add("Remove Widgets Platform Runtime package")
+            $recommendations.Add("Recommended if: the Widgets taskbar icon/board keeps reappearing and stopping the background process each run is not enough.")
+        } else {
+            $recommendations.Add("Stronger option available: -RemoveWidgets, recommended only if the Widgets icon keeps resurfacing after Windows Update.")
+        }
     } else {
         $skipped.Add("Microsoft consumer-content cleanup")
         $recommendations.Add("Consider enabling: Microsoft consumer-content cleanup, unless you want Windows suggestions/widgets/activity features left alone.")
@@ -246,6 +289,7 @@ function Write-HumanSummary {
     $activeFlags = @()
     if ($BlockOneDrive)       { $activeFlags += "-BlockOneDrive" }
     if ($RemoveOneDrive)      { $activeFlags += "-RemoveOneDrive" }
+    if ($RemoveWidgets)       { $activeFlags += "-RemoveWidgets" }
     if ($DisableEdgeUpdates)  { $activeFlags += "-DisableEdgeUpdates" }
     if ($DisableWindowsAI)    { $activeFlags += "-DisableWindowsAI" }
     if ($SkipCopilot)         { $activeFlags += "-SkipCopilot" }
@@ -461,6 +505,7 @@ Write-Log "Log: $logPath"
 $selectedSwitches = @{
     BlockOneDrive = $BlockOneDrive.IsPresent
     RemoveOneDrive = $RemoveOneDrive.IsPresent
+    RemoveWidgets = $RemoveWidgets.IsPresent
     DisableEdgeUpdates = $DisableEdgeUpdates.IsPresent
     DisableWindowsAI = $DisableWindowsAI.IsPresent
     SkipCopilot = $SkipCopilot.IsPresent
@@ -544,10 +589,10 @@ if (-not $SkipCopilot) {
     Remove-AppxPackagesByPattern -Pattern "*copilot*" -Description "Remove installed Copilot Appx packages"
     Remove-ProvisionedPackagesByDisplayName -Pattern "*Copilot*" -Description "Remove provisioned Copilot packages"
 
-    Invoke-Fix "Set Copilot-off policies" {
-        Set-RegDword -Path "HKCU\Software\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Value 1
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Value 1
-    }
+    Invoke-RegDwordFixGroup -Description "Set Copilot-off policies" -Entries @(
+        @{ Path = "HKCU\Software\Policies\Microsoft\Windows\WindowsCopilot"; Name = "TurnOffWindowsCopilot"; Value = 1 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot"; Name = "TurnOffWindowsCopilot"; Value = 1 }
+    )
 
     Remove-StartupEntriesByPattern -Description "Copilot" -Patterns @(
         "Copilot"
@@ -574,12 +619,12 @@ if (-not $SkipEdge) {
     Remove-ProvisionedPackagesByDisplayName -Pattern "*Edge.GameAssist*" -Description "Remove provisioned Edge GameAssist packages"
     Remove-ProvisionedPackagesByDisplayName -Pattern "*GameAssist*" -Description "Remove provisioned GameAssist packages"
 
-    Invoke-Fix "Apply Edge browser anti-background policies" {
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Edge" -Name "StartupBoostEnabled" -Value 0
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Edge" -Name "BackgroundModeEnabled" -Value 0
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Edge" -Name "HideFirstRunExperience" -Value 1
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Edge" -Name "HubsSidebarEnabled" -Value 0
-    }
+    Invoke-RegDwordFixGroup -Description "Apply Edge browser anti-background policies" -Entries @(
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "StartupBoostEnabled"; Value = 0 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "BackgroundModeEnabled"; Value = 0 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "HideFirstRunExperience"; Value = 1 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "HubsSidebarEnabled"; Value = 0 }
+    )
 
     Remove-StartupEntriesByPattern -Description "Edge background startup entries" -Patterns @(
         "MicrosoftEdgeAutoLaunch",
@@ -606,44 +651,66 @@ if (-not $SkipConsumerContent) {
     Write-Log ""
     Write-Log "MICROSOFT CONSUMER CONTENT"
 
-    Invoke-Fix "Apply anti-consumer-content and telemetry reduction policies" {
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo" -Name "Enabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\Privacy" -Name "TailoredExperiencesWithDiagnosticDataEnabled" -Value 0
+    Invoke-RegDwordFixGroup -Description "Apply anti-consumer-content and telemetry reduction policies" -Entries @(
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo"; Name = "Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\Privacy"; Name = "TailoredExperiencesWithDiagnosticDataEnabled"; Value = 0 },
 
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "ContentDeliveryAllowed" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "FeatureManagementEnabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "OemPreInstalledAppsEnabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "PreInstalledAppsEnabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "PreInstalledAppsEverEnabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SilentInstalledAppsEnabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SoftLandingEnabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SubscribedContent-310093Enabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SubscribedContent-338387Enabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SubscribedContent-338388Enabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SubscribedContent-338389Enabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SubscribedContent-353694Enabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SubscribedContent-353696Enabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SubscribedContent-353698Enabled" -Value 0
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SystemPaneSuggestionsEnabled" -Value 0
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "ContentDeliveryAllowed"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "FeatureManagementEnabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "OemPreInstalledAppsEnabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "PreInstalledAppsEnabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "PreInstalledAppsEverEnabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SilentInstalledAppsEnabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SoftLandingEnabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-310093Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-338387Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-338388Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-338389Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-353694Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-353696Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-353698Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SystemPaneSuggestionsEnabled"; Value = 0 },
 
-        Set-RegDword -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarDa" -Value 0
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\SearchSettings"; Name = "IsDynamicSearchBoxEnabled"; Value = 0 },
 
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -Name "DisableWindowsConsumerFeatures" -Value 1
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -Name "DisableTailoredExperiencesWithDiagnosticData" -Value 1
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 1
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"; Name = "TaskbarDa"; Value = 0 },
 
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" -Name "EnableActivityFeed" -Value 0
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" -Name "PublishUserActivities" -Value 0
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" -Name "UploadUserActivities" -Value 0
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"; Name = "DisableWindowsConsumerFeatures"; Value = 1 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\CloudContent"; Name = "DisableTailoredExperiencesWithDiagnosticData"; Value = 1 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\DataCollection"; Name = "AllowTelemetry"; Value = 1 },
 
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Value 0
-    }
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\System"; Name = "EnableActivityFeed"; Value = 0 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\System"; Name = "PublishUserActivities"; Value = 0 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\System"; Name = "UploadUserActivities"; Value = 0 },
+
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Dsh"; Name = "AllowNewsAndInterests"; Value = 0 }
+    )
 
     Disable-ScheduledTasksByPattern -Description "SoftLanding/creative/deferral" -Patterns @(
         "SoftLanding",
         "Creative",
         "Deferral"
     )
+
+    Write-Log ""
+    Write-Log "WIDGETS"
+
+    $widgetProcesses = Get-Process -Name "WidgetService", "Widgets" -ErrorAction SilentlyContinue
+    if ($widgetProcesses) {
+        Invoke-Fix "Stop Widgets platform processes" {
+            taskkill.exe /F /IM WidgetService.exe 2>$null | Out-Null
+            taskkill.exe /F /IM Widgets.exe 2>$null | Out-Null
+        }
+    } else {
+        Write-Log "OK: No Widgets platform processes running."
+    }
+
+    if ($RemoveWidgets) {
+        Remove-AppxPackagesByPattern -Pattern "*WidgetsPlatformRuntime*" -Description "Remove Widgets Platform Runtime Appx package"
+        Remove-ProvisionedPackagesByDisplayName -Pattern "*Widgets*" -Description "Remove provisioned Widgets packages"
+    } else {
+        Write-Log "INFO: Widgets Platform Runtime package left installed. Use -RemoveWidgets to remove it."
+    }
 } else {
     Write-Log "SKIP: Microsoft consumer content cleanup disabled by parameter."
 }
@@ -655,18 +722,18 @@ if ($DisableWindowsAI) {
     $windowsAIDetection = Get-MicrosludgeWindowsAIDetection
     Write-MicrosludgeWindowsAIReport -Detection $windowsAIDetection -Writer { param($Message) Write-Log $Message }
 
-    Invoke-Fix "Apply Windows AI disable policies" {
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "AllowRecallEnablement" -Value 0
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableAIDataAnalysis" -Value 1
-        Set-RegDword -Path "HKCU\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableAIDataAnalysis" -Value 1
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableClickToDo" -Value 1
-        Set-RegDword -Path "HKCU\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableClickToDo" -Value 1
-        Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI" -Name "DisableSettingsAgent" -Value 1
+    Invoke-RegDwordFixGroup -Description "Apply Windows AI disable policies" -Entries @(
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"; Name = "AllowRecallEnablement"; Value = 0 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"; Name = "DisableAIDataAnalysis"; Value = 1 },
+        @{ Path = "HKCU\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"; Name = "DisableAIDataAnalysis"; Value = 1 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"; Name = "DisableClickToDo"; Value = 1 },
+        @{ Path = "HKCU\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"; Name = "DisableClickToDo"; Value = 1 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"; Name = "DisableSettingsAgent"; Value = 1 },
 
-        Set-RegDword -Path "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Paint" -Name "DisableCocreator" -Value 1
-        Set-RegDword -Path "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Paint" -Name "DisableGenerativeFill" -Value 1
-        Set-RegDword -Path "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Paint" -Name "DisableImageCreator" -Value 1
-    }
+        @{ Path = "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Paint"; Name = "DisableCocreator"; Value = 1 },
+        @{ Path = "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Paint"; Name = "DisableGenerativeFill"; Value = 1 },
+        @{ Path = "HKLM\Software\Microsoft\Windows\CurrentVersion\Policies\Paint"; Name = "DisableImageCreator"; Value = 1 }
+    )
 } else {
     Write-Log "INFO: Windows AI cleanup skipped. Use -DisableWindowsAI to enable it."
 }
@@ -719,6 +786,24 @@ if ($gameAssistLeft) {
     Write-Log "OK: Microsoft.Edge.GameAssist absent."
 }
 
+if (-not $SkipConsumerContent) {
+    $widgetsProcessLeft = Get-Process -Name "WidgetService", "Widgets" -ErrorAction SilentlyContinue
+    if ($widgetsProcessLeft) {
+        Write-Log "WARNING: Widgets platform process still running."
+    } else {
+        Write-Log "OK: Widgets platform process absent."
+    }
+
+    if ($RemoveWidgets) {
+        $widgetsPackageLeft = Get-AppxPackage -AllUsers "*WidgetsPlatformRuntime*" -ErrorAction SilentlyContinue
+        if ($widgetsPackageLeft) {
+            Write-Log "WARNING: Widgets Platform Runtime package still found."
+        } else {
+            Write-Log "OK: Widgets Platform Runtime package absent."
+        }
+    }
+}
+
 $edgeProcesses = Get-Process -Name msedge, MicrosoftEdgeUpdate -ErrorAction SilentlyContinue |
     Select-Object ProcessName, Id, Path
 
@@ -756,6 +841,7 @@ if ($Apply) {
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy" -Name "TailoredExperiencesWithDiagnosticDataEnabled" -Expected 0
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SoftLandingEnabled" -Expected 0
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SystemPaneSuggestionsEnabled" -Expected 0
+        Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\SearchSettings" -Name "IsDynamicSearchBoxEnabled" -Expected 0
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarDa" -Expected 0
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -Name "DisableWindowsConsumerFeatures" -Expected 1
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -Name "DisableTailoredExperiencesWithDiagnosticData" -Expected 1
