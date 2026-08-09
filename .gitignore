@@ -2,3 +2,8 @@ Logs/
 *.log
 dist/
 .claude/settings.local.json
+
+# agent tooling
+.claude/settings.json
+.opencode/
+tmp/
