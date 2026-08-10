@@ -7,3 +7,6 @@ dist/
 .claude/settings.json
 .opencode/
 tmp/
+
+# squelch: estate config — local only on public repos (see ohnoai/squelch)
+.squelch.json
