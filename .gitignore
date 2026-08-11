@@ -4,8 +4,9 @@ dist/
 .claude/settings.local.json
 
 # agent tooling
-.claude/settings.json
-.opencode/
+.opencode/**
+!.opencode/plugin/
+!.opencode/plugin/veans-prime.ts
 tmp/
 
 # squelch: estate config — local only on public repos (see ohnoai/squelch)
