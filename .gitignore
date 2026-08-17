@@ -1,13 +1,18 @@
 Logs/
 *.log
 dist/
-.claude/settings.local.json
-
-# agent tooling
-.opencode/**
-!.opencode/plugin/
-!.opencode/plugin/veans-prime.ts
 tmp/
 
 # squelch: estate config — local only on public repos (see ohnoai/squelch)
 .squelch.json
+
+# agent tooling — kept locally, not published on the public repo
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.claude/
+.opencode/
+.serena/
+.veans.yml
+plans/
+tasks/

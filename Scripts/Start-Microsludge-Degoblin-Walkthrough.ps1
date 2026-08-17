@@ -619,7 +619,7 @@ if ($updateState) {
     $packageVersion = Get-MicrosludgeVersion -Root $repoRoot
     if ($updateState.LatestKnownVersion -and $updateState.LatestKnownVersion -ne $packageVersion) {
         Write-Host "NOTICE: v$($updateState.LatestKnownVersion) is available on GitHub (you have v$packageVersion)."
-        Write-Host "        https://github.com/jtcristina/Microsludge-Degoblin/releases"
+        Write-Host "        https://github.com/ohnoai/MICROSLUDGE-DEGOBLIN-9000/releases"
         Write-Host ""
     }
 

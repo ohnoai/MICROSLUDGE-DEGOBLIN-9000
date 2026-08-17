@@ -277,7 +277,7 @@ function Test-MicrosludgeUpdateAvailable {
     param(
         [string]$InstallRoot,
         [string]$CurrentVersion,
-        [string]$RepoSlug = "jtcristina/Microsludge-Degoblin",
+        [string]$RepoSlug = "ohnoai/MICROSLUDGE-DEGOBLIN-9000",
         [int]$CacheHours = 24,
         [switch]$Force
     )

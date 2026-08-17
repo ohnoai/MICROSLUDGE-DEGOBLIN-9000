@@ -144,7 +144,7 @@ $installRootForUpdateCheck = Get-MicrosludgeInstallRoot
 try {
     $updateStatus = Test-MicrosludgeUpdateAvailable -InstallRoot $installRootForUpdateCheck -CurrentVersion $packageVersion
     if ($updateStatus.UpdateAvailable) {
-        Write-AutoLog "NOTICE: A newer Microsludge Degoblin release is available: $($updateStatus.LatestVersion) (installed: $($updateStatus.CurrentVersion)). Get it from https://github.com/jtcristina/Microsludge-Degoblin/releases"
+        Write-AutoLog "NOTICE: A newer Microsludge Degoblin release is available: $($updateStatus.LatestVersion) (installed: $($updateStatus.CurrentVersion)). Get it from https://github.com/ohnoai/MICROSLUDGE-DEGOBLIN-9000/releases"
         Show-MicrosludgeBalloonNotification `
             -Title "Microsludge Degoblin update available" `
             -Message "v$($updateStatus.LatestVersion) is out (you have v$($updateStatus.CurrentVersion)). Check the Releases page when you get a chance." `
