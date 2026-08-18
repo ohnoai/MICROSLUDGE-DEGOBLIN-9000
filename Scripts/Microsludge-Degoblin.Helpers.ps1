@@ -79,6 +79,7 @@ function Get-MicrosludgeCleanupSwitchNames {
         "RemoveWidgets",
         "DisableEdgeUpdates",
         "DisableWindowsAI",
+        "PinDocuments",
         "SkipCopilot",
         "SkipOneDrive",
         "SkipEdge",
@@ -136,6 +137,7 @@ function Get-MicrosludgeSwitchDescription {
         RemoveWidgets = "Removes the Widgets Platform Runtime package outright, not just its background process."
         DisableEdgeUpdates = "Disables Edge update scheduled tasks and services."
         DisableWindowsAI = "Disables Recall, Click to Do, Settings AI agent, and Paint AI policies."
+        PinDocuments = "Pins the Documents folder to the local user profile if OneDrive or Windows has relocated it."
         SkipCopilot = "Skips Copilot package and policy cleanup."
         SkipOneDrive = "Skips OneDrive process/startup/task cleanup."
         SkipEdge = "Skips Edge background/startup/GameAssist cleanup."

@@ -14,6 +14,7 @@ param(
     [switch]$RemoveWidgets,
     [switch]$DisableEdgeUpdates,
     [switch]$DisableWindowsAI,
+    [switch]$PinDocuments,
     [switch]$SkipCopilot,
     [switch]$SkipOneDrive,
     [switch]$SkipEdge,
@@ -116,6 +117,7 @@ $switchValues = @{
     RemoveWidgets = $RemoveWidgets.IsPresent
     DisableEdgeUpdates = $DisableEdgeUpdates.IsPresent
     DisableWindowsAI = $DisableWindowsAI.IsPresent
+    PinDocuments = $PinDocuments.IsPresent
     SkipCopilot = $SkipCopilot.IsPresent
     SkipOneDrive = $SkipOneDrive.IsPresent
     SkipEdge = $SkipEdge.IsPresent

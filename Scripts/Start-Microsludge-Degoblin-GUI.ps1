@@ -14,6 +14,7 @@ param(
     [switch]$RemoveWidgets,
     [switch]$DisableEdgeUpdates,
     [switch]$DisableWindowsAI,
+    [switch]$PinDocuments,
     [switch]$SkipCopilot,
     [switch]$SkipOneDrive,
     [switch]$SkipEdge,
@@ -234,6 +235,7 @@ $xaml = @'
                     <CheckBox x:Name="CheckRemoveOneDrive" Content="Uninstall OneDrive"/>
                     <CheckBox x:Name="CheckRemoveWidgets" Content="Remove Widgets package"/>
                     <CheckBox x:Name="CheckDisableEdgeUpdates" Content="Disable Edge updates"/>
+                    <CheckBox x:Name="CheckPinDocuments" Content="Pin Documents local"/>
                     <CheckBox x:Name="CheckWindowsAI" Content="Windows AI cleanup" IsEnabled="False" ToolTip="Run the AI report first." ToolTipService.ShowOnDisabled="True"/>
 
                     <Separator Margin="0,10,0,10" Background="#2A363B"/>
@@ -307,6 +309,7 @@ $CheckBlockOneDrive = $window.FindName("CheckBlockOneDrive")
 $CheckRemoveOneDrive = $window.FindName("CheckRemoveOneDrive")
 $CheckRemoveWidgets = $window.FindName("CheckRemoveWidgets")
 $CheckDisableEdgeUpdates = $window.FindName("CheckDisableEdgeUpdates")
+$CheckPinDocuments = $window.FindName("CheckPinDocuments")
 $CheckWindowsAI = $window.FindName("CheckWindowsAI")
 $CheckAlwaysApply = $window.FindName("CheckAlwaysApply")
 $OptionSummaryText = $window.FindName("OptionSummaryText")
@@ -448,6 +451,7 @@ function Get-GuiSwitchValues {
         RemoveOneDrive = [bool]$CheckRemoveOneDrive.IsChecked
         RemoveWidgets = [bool]$CheckRemoveWidgets.IsChecked
         DisableEdgeUpdates = [bool]$CheckDisableEdgeUpdates.IsChecked
+        PinDocuments = [bool]$CheckPinDocuments.IsChecked
         DisableWindowsAI = ($CheckWindowsAI.IsEnabled -and [bool]$CheckWindowsAI.IsChecked)
         SkipCopilot = -not [bool]$CheckCopilot.IsChecked
         SkipOneDrive = -not [bool]$CheckOneDrive.IsChecked
@@ -465,6 +469,7 @@ function Set-GuiSwitchValues {
     $CheckRemoveOneDrive.IsChecked = [bool]$Values.RemoveOneDrive
     $CheckRemoveWidgets.IsChecked = [bool]$Values.RemoveWidgets
     $CheckDisableEdgeUpdates.IsChecked = [bool]$Values.DisableEdgeUpdates
+    $CheckPinDocuments.IsChecked = [bool]$Values.PinDocuments
     $CheckWindowsAI.IsChecked = [bool]$Values.DisableWindowsAI
     $CheckCopilot.IsChecked = -not [bool]$Values.SkipCopilot
     $CheckOneDrive.IsChecked = -not [bool]$Values.SkipOneDrive
@@ -722,6 +727,12 @@ function Start-GuiWizard {
         ChoiceText = "Disable Edge update services and tasks"
         Control = $CheckDisableEdgeUpdates
     })
+    $steps.Add([pscustomobject]@{
+        Title = "Documents path pinning"
+        Body = "This points the Documents folder back to the local user profile if OneDrive or Windows has redirected it elsewhere. Leave this off if you want Documents to stay wherever it currently points."
+        ChoiceText = "Include Documents path pinning"
+        Control = $CheckPinDocuments
+    })
 
     if ($script:WindowsAITargetFound) {
         $steps.Add([pscustomobject]@{
@@ -898,6 +909,7 @@ $optionControls = @(
     $CheckRemoveOneDrive,
     $CheckRemoveWidgets,
     $CheckDisableEdgeUpdates,
+    $CheckPinDocuments,
     $CheckWindowsAI,
     $CheckAlwaysApply
 )
@@ -913,6 +925,7 @@ Set-GuiSwitchValues -Values @{
     RemoveOneDrive = $RemoveOneDrive.IsPresent
     RemoveWidgets = $RemoveWidgets.IsPresent
     DisableEdgeUpdates = $DisableEdgeUpdates.IsPresent
+    PinDocuments = $PinDocuments.IsPresent
     DisableWindowsAI = $DisableWindowsAI.IsPresent
     SkipCopilot = $SkipCopilot.IsPresent
     SkipOneDrive = $SkipOneDrive.IsPresent

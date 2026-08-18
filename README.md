@@ -2,7 +2,7 @@
 
 # Microsludge Degoblin
 
-Current version: `1.3.0` (see `VERSION`).
+Current version: `1.4.0` (see `VERSION`).
 
 Microsludge Degoblin is a Windows cleanup tool for Microsoft components that keep coming back after updates.
 
@@ -57,7 +57,7 @@ That means you can clean the machine once, then let Microsludge Degoblin keep th
 
 ## Default Non-Targets
 
-- Does not move user folders or change shell-folder mappings
+- Does not move user folders or change shell-folder mappings unless `-PinDocuments` is passed
 - Does not disable third-party startup items
 - Does not remove Edge browser itself
 - Does not remove or block WebView2
@@ -170,6 +170,7 @@ Optional stronger switches:
 - `-RemoveWidgets`: Removes the Widgets Platform Runtime Appx package, not just its background process. Windows Update may reinstall it later.
 - `-DisableEdgeUpdates`: Disables MicrosoftEdgeUpdate scheduled tasks and `edgeupdate` / `edgeupdatem` services. This can also affect WebView2 update freshness, so it is opt-in.
 - `-DisableWindowsAI`: Applies Windows AI policies for Recall availability/snapshots, Click to Do, Settings AI agent, and Paint AI features. This does not remove the Recall optional feature bits.
+- `-PinDocuments`: Points the Documents folder back to `C:\Users\<you>\Documents` if OneDrive or Windows has redirected it elsewhere.
 - `-SkipRestorePoint`: Advanced option for direct apply runs. Skips the automatic restore point request. The GUI and console walkthrough use this after handling the restore point prompt themselves.
 
 ## Scheduled Task

@@ -391,6 +391,11 @@ function Start-Wizard {
         Write-Host "No Windows AI targets were found, so the Windows AI cleanup option is omitted."
     }
 
+    $pinDocuments = Read-WizardYesNo `
+        -Question "Include Documents path pinning?" `
+        -DefaultYes $false `
+        -Explanation "Opt-in. Recommended if: OneDrive or Windows keeps relocating your Documents folder and you want it forced back to C:\Users\<you>\Documents."
+
     $includeCopilot = Read-WizardYesNo `
         -Question "Include Copilot cleanup?" `
         -DefaultYes $true `
@@ -460,6 +465,7 @@ function Start-Wizard {
         RemoveOneDrive = $removeOneDrive
         DisableEdgeUpdates = $disableEdgeUpdates
         DisableWindowsAI = $disableWindowsAI
+        PinDocuments = $pinDocuments
         SkipCopilot = -not $includeCopilot
         SkipOneDrive = -not $includeOneDrive
         SkipEdge = -not $includeEdge
@@ -506,6 +512,7 @@ function Start-Wizard {
     } else {
         Write-Host "  Windows AI cleanup: omitted"
     }
+    Write-Host "  Documents path pinning: $pinDocuments"
     Write-Host "  Copilot cleanup: $includeCopilot"
     Write-Host "  OneDrive startup cleanup: $includeOneDrive"
     Write-Host "  Block OneDrive sync: $blockOneDrive"

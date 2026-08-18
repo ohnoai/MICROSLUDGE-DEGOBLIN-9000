@@ -16,7 +16,7 @@ Default targets:
   - SoftLanding scheduled tasks
 
 Default non-targets:
-  - Does not move user folders or change shell-folder mappings
+  - Does not move user folders or change shell-folder mappings unless -PinDocuments is passed
   - Does not disable third-party startup items
   - Does not remove Edge browser itself
   - Does not remove or block WebView2
@@ -38,6 +38,7 @@ param(
     [switch]$RemoveWidgets,
     [switch]$DisableEdgeUpdates,
     [switch]$DisableWindowsAI,
+    [switch]$PinDocuments,
     [switch]$SkipRestorePoint,
     [switch]$SkipCopilot,
     [switch]$SkipOneDrive,
@@ -78,7 +79,7 @@ function Write-Log {
         "^FIX:"      { $script:MicrosludgeStats.Fix++; break }
         "^WOULD FIX:" { $script:MicrosludgeStats.WouldFix++; break }
         "^WARNING:"  { $script:MicrosludgeStats.Warning++; break }
-        "^ERROR"     { $script:MicrosludgeStats.Error++; break }
+        "^ERROR\b"   { $script:MicrosludgeStats.Error++; break }
         "^SKIP:"     { $script:MicrosludgeStats.Skipped++; break }
     }
 
@@ -140,6 +141,38 @@ function Set-RegDword {
     }
 }
 
+function Set-RegString {
+    param(
+        [string]$Path,
+        [string]$Name,
+        [string]$Value,
+        [ValidateSet("REG_SZ", "REG_EXPAND_SZ")]
+        [string]$Type = "REG_SZ"
+    )
+
+    $target = "$Path\$Name"
+    try {
+        $output = @(reg.exe add $Path /v $Name /t $Type /d $Value /f 2>&1)
+        $exitCode = $LASTEXITCODE
+        $outputText = (@($output) | ForEach-Object { "$_" }) -join " "
+
+        if ($exitCode -ne 0) {
+            if ([string]::IsNullOrWhiteSpace($outputText)) {
+                $outputText = "reg.exe exited with code $exitCode."
+            } else {
+                $outputText = "reg.exe exited with code ${exitCode}: $outputText"
+            }
+
+            Write-Log "ERROR: Registry write failed: $target = $Value. $outputText"
+            return
+        }
+
+        Write-Log "OK: Registry write: $target = $Value"
+    } catch {
+        Write-Log "ERROR: Registry write failed: $target = $Value. $($_.Exception.Message)"
+    }
+}
+
 function Write-RegDwordCheck {
     param(
         [string]$Path,
@@ -155,6 +188,31 @@ function Write-RegDwordCheck {
     try {
         $property = Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction Stop
         $actual = [int]$property.$Name
+        if ($actual -eq $Expected) {
+            Write-Log "OK: Registry $Path\$Name = $Expected"
+        } else {
+            Write-Log "WARNING: Registry $Path\$Name expected $Expected, found $actual"
+        }
+    } catch {
+        Write-Log "WARNING: Registry value missing or unreadable: $Path\$Name"
+    }
+}
+
+function Write-RegStringCheck {
+    param(
+        [string]$Path,
+        [string]$Name,
+        [string]$Expected
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Log "WARNING: Registry path missing: $Path"
+        return
+    }
+
+    try {
+        $property = Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction Stop
+        $actual = "$($property.$Name)"
         if ($actual -eq $Expected) {
             Write-Log "OK: Registry $Path\$Name = $Expected"
         } else {
@@ -278,6 +336,14 @@ function Write-HumanSummary {
         $recommendations.Add("Optional: Windows AI cleanup is opt-in. Recommended only if detection finds targets or you want those policies set preemptively.")
     }
 
+    if ($PinDocuments) {
+        $stronger.Add("Documents local path pinning")
+        $recommendations.Add("Recommended if: OneDrive or Windows keeps relocating your Documents folder and you want it forced back to the local user folder.")
+    } else {
+        $skipped.Add("Documents local path pinning")
+        $recommendations.Add("Optional: Documents path pinning is opt-in. Recommended only if Documents keeps getting redirected away from the local user folder.")
+    }
+
     Write-Log ""
     Write-Log "========================================"
     Write-Log "SUMMARY"
@@ -292,6 +358,7 @@ function Write-HumanSummary {
     if ($RemoveWidgets)       { $activeFlags += "-RemoveWidgets" }
     if ($DisableEdgeUpdates)  { $activeFlags += "-DisableEdgeUpdates" }
     if ($DisableWindowsAI)    { $activeFlags += "-DisableWindowsAI" }
+    if ($PinDocuments)        { $activeFlags += "-PinDocuments" }
     if ($SkipCopilot)         { $activeFlags += "-SkipCopilot" }
     if ($SkipOneDrive)        { $activeFlags += "-SkipOneDrive" }
     if ($SkipEdge)            { $activeFlags += "-SkipEdge" }
@@ -508,6 +575,7 @@ $selectedSwitches = @{
     RemoveWidgets = $RemoveWidgets.IsPresent
     DisableEdgeUpdates = $DisableEdgeUpdates.IsPresent
     DisableWindowsAI = $DisableWindowsAI.IsPresent
+    PinDocuments = $PinDocuments.IsPresent
     SkipCopilot = $SkipCopilot.IsPresent
     SkipOneDrive = $SkipOneDrive.IsPresent
     SkipEdge = $SkipEdge.IsPresent
@@ -715,6 +783,29 @@ if (-not $SkipConsumerContent) {
     Write-Log "SKIP: Microsoft consumer content cleanup disabled by parameter."
 }
 
+if ($PinDocuments) {
+    Write-Log ""
+    Write-Log "DOCUMENTS"
+
+    $localDocuments = Join-Path $env:USERPROFILE "Documents"
+    $currentDocuments = [Environment]::GetFolderPath("MyDocuments")
+
+    Write-Log "Current Documents path: $currentDocuments"
+    Write-Log "Expected Documents path: $localDocuments"
+
+    if ($currentDocuments -ne $localDocuments) {
+        Invoke-Fix "Point Documents back to local user folder" {
+            New-Item -ItemType Directory -Force -Path $localDocuments | Out-Null
+            Set-RegString -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -Name "Personal" -Type "REG_EXPAND_SZ" -Value "%USERPROFILE%\Documents"
+            Set-RegString -Path "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" -Name "Personal" -Type "REG_SZ" -Value $localDocuments
+        }
+    } else {
+        Write-Log "OK: Documents is already local."
+    }
+} else {
+    Write-Log "INFO: Documents path pinning skipped. Use -PinDocuments to enable it."
+}
+
 if ($DisableWindowsAI) {
     Write-Log ""
     Write-Log "WINDOWS AI"
@@ -850,6 +941,10 @@ if ($Apply) {
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" -Name "PublishUserActivities" -Expected 0
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" -Name "UploadUserActivities" -Expected 0
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Expected 0
+    }
+
+    if ($PinDocuments) {
+        Write-RegStringCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" -Name "Personal" -Expected (Join-Path $env:USERPROFILE "Documents")
     }
 
     if ($DisableWindowsAI) {
