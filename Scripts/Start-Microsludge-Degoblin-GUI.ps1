@@ -125,7 +125,7 @@ $xaml = @'
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Microsludge Degoblin 9000"
         Width="940"
-        Height="720"
+        Height="780"
         MinWidth="840"
         MinHeight="650"
         WindowStartupLocation="CenterScreen"
@@ -218,6 +218,7 @@ $xaml = @'
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <Button x:Name="GuideButton" Content="Guide me through this" Style="{StaticResource AccentButton}" HorizontalAlignment="Stretch" Margin="0,0,0,10" ToolTip="Walk through the options one at a time."/>
 
@@ -256,6 +257,7 @@ $xaml = @'
                                    FontFamily="Consolas"/>
                     </Border>
                 </StackPanel>
+                </ScrollViewer>
             </Border>
 
             <Grid Grid.Column="1" Margin="10,0,0,0">
@@ -577,6 +579,9 @@ function Invoke-GuiScript {
     Add-GuiLog $commandLine
 
     Set-GuiBusy $true
+    $warningCount = 0
+    $errorCount = 0
+    $plainEnglish = $null
     try {
         $runArgs = @(
             "-NoProfile",
@@ -588,7 +593,11 @@ function Invoke-GuiScript {
 
         & powershell.exe @runArgs *>&1 |
             ForEach-Object {
-                Add-GuiProcessOutput "$_"
+                $line = "$_"
+                if ($line -match '\bWARNING\b') { $warningCount++ }
+                if ($line -match '\bERROR\b') { $errorCount++ }
+                if ($line -match 'Plain English:\s*(.+)$') { $plainEnglish = $Matches[1].Trim() }
+                Add-GuiProcessOutput $line
             }
 
         $exitCode = $LASTEXITCODE
@@ -597,6 +606,28 @@ function Invoke-GuiScript {
         }
 
         Add-GuiLog "Exit code: $exitCode"
+
+        $resultLines = New-Object System.Collections.Generic.List[string]
+        $resultLines.Add($Label)
+        if ($plainEnglish) {
+            $resultLines.Add("")
+            $resultLines.Add($plainEnglish)
+        }
+        $resultLines.Add("")
+
+        if ($exitCode -ne 0) {
+            $resultLines.Add("Failed (exit code $exitCode). Check the output panel for details.")
+            Show-GuiMessage -Title "Microsludge Degoblin - failed" -Message ($resultLines -join "`r`n") -Icon Error
+        } elseif ($errorCount -gt 0) {
+            $resultLines.Add("Finished, but $errorCount error line(s) were logged. Check the output panel for details.")
+            Show-GuiMessage -Title "Microsludge Degoblin - finished with errors" -Message ($resultLines -join "`r`n") -Icon Error
+        } elseif ($warningCount -gt 0) {
+            $resultLines.Add("Finished with $warningCount warning(s). Check the output panel for details.")
+            Show-GuiMessage -Title "Microsludge Degoblin - finished with warnings" -Message ($resultLines -join "`r`n") -Icon Warning
+        } else {
+            $resultLines.Add("Finished with no warnings or errors.")
+            Show-GuiMessage -Title "Microsludge Degoblin - done" -Message ($resultLines -join "`r`n") -Icon Information
+        }
     } catch {
         Add-GuiLog "ERROR: $($_.Exception.Message)"
         Show-GuiMessage -Message $_.Exception.Message -Icon Error
@@ -631,11 +662,13 @@ function Invoke-GuiWindowsAIReport {
             $CheckWindowsAI.Content = "Windows AI cleanup"
             $CheckWindowsAI.ToolTip = "Available. The report found Windows AI targets."
             Add-GuiLog "Windows AI cleanup option enabled."
+            Show-GuiMessage -Title "Microsludge Degoblin - AI report done" -Message "Windows AI detection report finished.`r`n`r`nFound Windows AI-related targets on this PC. The ""Windows AI cleanup"" checkbox is now available." -Icon Information
         } else {
             $CheckWindowsAI.IsChecked = $false
             $CheckWindowsAI.Content = "Windows AI cleanup"
             $CheckWindowsAI.ToolTip = "Omitted. The report did not find Windows AI targets."
             Add-GuiLog "Windows AI cleanup option omitted because no targets were found."
+            Show-GuiMessage -Title "Microsludge Degoblin - AI report done" -Message "Windows AI detection report finished.`r`n`r`nNo Windows AI-related targets found on this PC. Nothing to clean up here." -Icon Information
         }
 
         $success = $true

@@ -7,10 +7,10 @@ Purpose:
 
 Default targets:
   - Copilot packages and off policies
-  - OneDrive process and startup entries
+  - OneDrive process, startup entries, and backup-nag notification
   - Microsoft.OutlookForWindows
   - Microsoft.Edge.GameAssist
-  - Edge background/startup/sidebar policies
+  - Edge background/startup/sidebar policies and default-browser nag
   - Microsoft consumer content, suggestions, ads, search highlights, tailored experiences, activity upload
   - Widgets/news taskbar setting and platform process
   - SoftLanding scheduled tasks
@@ -230,23 +230,29 @@ function Invoke-RegDwordFixGroup {
     )
 
     $drifted = New-Object System.Collections.Generic.List[string]
+    $driftedEntries = New-Object System.Collections.Generic.List[object]
     foreach ($entry in $Entries) {
         $drivePath = $entry.Path -replace '^(HKLM|HKCU)\\', '$1:\'
         $state = Get-MicrosludgeRegistryValueState -Path $drivePath -Name $entry.Name
         if (-not $state.Exists -or "$($state.Value)" -ne "$($entry.Value)") {
             $found = if ($state.Exists) { "$($state.Value)" } else { "missing" }
             $drifted.Add("$($entry.Path)\$($entry.Name) (expected $($entry.Value), found $found)")
+            $driftedEntries.Add($entry)
         }
     }
 
     if ($Apply) {
-        Write-Log "FIX: $Description"
-        try {
-            foreach ($entry in $Entries) {
-                Set-RegDword -Path $entry.Path -Name $entry.Name -Value $entry.Value
+        if ($driftedEntries.Count -eq 0) {
+            Write-Log "OK: $Description already applied. No drift found."
+        } else {
+            Write-Log "FIX: $Description"
+            try {
+                foreach ($entry in $driftedEntries) {
+                    Set-RegDword -Path $entry.Path -Name $entry.Name -Value $entry.Value
+                }
+            } catch {
+                Write-Log "ERROR during '$Description': $($_.Exception.Message)"
             }
-        } catch {
-            Write-Log "ERROR during '$Description': $($_.Exception.Message)"
         }
     } elseif ($drifted.Count -gt 0) {
         Write-Log "WOULD FIX: $Description"
@@ -618,9 +624,18 @@ if (-not $SkipOneDrive) {
         "OneDrive"
     )
 
+    Invoke-RegDwordFixGroup -Description "Suppress OneDrive 'back up your PC' Start menu notification" -Entries @(
+        @{ Path = "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Microsoft.SkyDrive.Desktop"; Name = "Enabled"; Value = 0 }
+    )
+
     if ($BlockOneDrive) {
-        Invoke-Fix "Apply OneDrive file sync block policy" {
-            Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -Value 1
+        $blockOneDriveState = Get-MicrosludgeRegistryValueState -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC"
+        if (-not $blockOneDriveState.Exists -or "$($blockOneDriveState.Value)" -ne "1") {
+            Invoke-Fix "Apply OneDrive file sync block policy" {
+                Set-RegDword -Path "HKLM\SOFTWARE\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -Value 1
+            }
+        } else {
+            Write-Log "OK: OneDrive file sync block policy already applied. No drift found."
         }
     } else {
         Write-Log "INFO: OneDrive sync block policy skipped. Use -BlockOneDrive to enable it."
@@ -691,7 +706,8 @@ if (-not $SkipEdge) {
         @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "StartupBoostEnabled"; Value = 0 },
         @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "BackgroundModeEnabled"; Value = 0 },
         @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "HideFirstRunExperience"; Value = 1 },
-        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "HubsSidebarEnabled"; Value = 0 }
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "HubsSidebarEnabled"; Value = 0 },
+        @{ Path = "HKLM\SOFTWARE\Policies\Microsoft\Edge"; Name = "DefaultBrowserSettingEnabled"; Value = 0 }
     )
 
     Remove-StartupEntriesByPattern -Description "Edge background startup entries" -Patterns @(
@@ -734,6 +750,7 @@ if (-not $SkipConsumerContent) {
         @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-338387Enabled"; Value = 0 },
         @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-338388Enabled"; Value = 0 },
         @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-338389Enabled"; Value = 0 },
+        @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-338393Enabled"; Value = 0 },
         @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-353694Enabled"; Value = 0 },
         @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-353696Enabled"; Value = 0 },
         @{ Path = "HKCU\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"; Name = "SubscribedContent-353698Enabled"; Value = 0 },
@@ -916,8 +933,12 @@ if ($Apply) {
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot" -Name "TurnOffWindowsCopilot" -Expected 1
     }
 
-    if (-not $SkipOneDrive -and $BlockOneDrive) {
-        Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -Expected 1
+    if (-not $SkipOneDrive) {
+        Write-RegDwordCheck -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Microsoft.SkyDrive.Desktop" -Name "Enabled" -Expected 0
+
+        if ($BlockOneDrive) {
+            Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive" -Name "DisableFileSyncNGSC" -Expected 1
+        }
     }
 
     if (-not $SkipEdge) {
@@ -925,6 +946,7 @@ if ($Apply) {
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -Name "BackgroundModeEnabled" -Expected 0
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -Name "HideFirstRunExperience" -Expected 1
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -Name "HubsSidebarEnabled" -Expected 0
+        Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Edge" -Name "DefaultBrowserSettingEnabled" -Expected 0
     }
 
     if (-not $SkipConsumerContent) {
@@ -932,6 +954,7 @@ if ($Apply) {
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy" -Name "TailoredExperiencesWithDiagnosticDataEnabled" -Expected 0
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SoftLandingEnabled" -Expected 0
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SystemPaneSuggestionsEnabled" -Expected 0
+        Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SubscribedContent-338393Enabled" -Expected 0
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\SearchSettings" -Name "IsDynamicSearchBoxEnabled" -Expected 0
         Write-RegDwordCheck -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "TaskbarDa" -Expected 0
         Write-RegDwordCheck -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -Name "DisableWindowsConsumerFeatures" -Expected 1
