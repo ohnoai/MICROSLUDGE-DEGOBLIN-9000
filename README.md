@@ -2,7 +2,7 @@
 
 # Microsludge Degoblin
 
-Current version: `1.4.0` (see `VERSION`).
+Current version: `1.5.0` (see `VERSION`).
 
 Microsludge Degoblin is a Windows cleanup tool for Microsoft components that keep coming back after updates.
 
@@ -47,10 +47,10 @@ That means you can clean the machine once, then let Microsludge Degoblin keep th
 
 - Copilot Appx packages and provisioned packages
 - Copilot off policies for current user and machine
-- OneDrive running process and startup resurrection entries
+- OneDrive running process, startup resurrection entries, and "back up your PC" Start menu nag notification
 - Microsoft.OutlookForWindows app/provisioned package
 - Microsoft.Edge.GameAssist app/provisioned package
-- Edge browser background mode, startup boost, first-run, and sidebar policies
+- Edge browser background mode, startup boost, first-run, sidebar, and default-browser nag policies
 - Microsoft consumer content, ads, suggestions, search highlights, tailored experiences, activity upload
 - Widgets/news taskbar policy, user setting, and platform background process
 - SoftLanding, creative, and deferral scheduled tasks
