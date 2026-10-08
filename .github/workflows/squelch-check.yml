@@ -1,0 +1,55 @@
+# squelch check on GitHub. Copy to .github/workflows/squelch-check.yml on the
+# repo's default branch BEFORE turning on the ruleset (pull_request_target only
+# runs workflows that are already on the default branch).
+#
+# pull_request_target runs this file as it is on the default branch, never the
+# pull request's copy, so a pull request cannot change its own check. The pull
+# request is checked out as data only: no code from it is executed. Only
+# same-repo pull requests are supported; a fork's checkout is refused by
+# actions/checkout, which fails the check.
+#
+# Needs one repository secret: SQUELCH_READ_TOKEN, a fine-grained token on
+# ohnoai with read-only Contents access to ohnoai/squelch. See
+# docs/guides/github-lock.md in squelch.
+
+name: squelch
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  squelch-check:
+    name: squelch-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the pull request as data
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+
+      - name: Check out squelch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ohnoai/squelch
+          ref: main
+          token: ${{ secrets.SQUELCH_READ_TOKEN }}
+          path: squelch
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: squelch ci-check
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node squelch/cli.mjs ci-check --repo target --base "$PR_BASE" --head "$PR_HEAD"
