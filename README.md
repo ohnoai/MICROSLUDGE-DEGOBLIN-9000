@@ -245,7 +245,7 @@ The package version lives in `VERSION` and uses `major.minor.patch` numbering. S
 
 ## Update Checks
 
-The scheduled task checks GitHub for newer releases at most once per day (cached in `Update-State.json` inside the installed copy). It never downloads or runs new code automatically — it only logs a NOTICE and shows a Windows tray notification pointing at the [Releases page](https://github.com/ohnoai/MICROSLUDGE-DEGOBLIN-9000/releases). Downloading and installing an update is always a manual, explicit step.
+The scheduled task checks GitHub for newer releases at most once per day (cached in `Update-State.json` inside the installed copy). It never downloads or runs new code automatically. It only logs a NOTICE and shows a Windows tray notification pointing at the [Releases page](https://github.com/ohnoai/MICROSLUDGE-DEGOBLIN-9000/releases). Downloading and installing an update is always a manual, explicit step.
 
 Separately, if a reinstall introduces a new opt-in cleanup option you haven't seen before, it stays off by default and gets flagged: a log NOTICE, a tray notification, and a one-time banner the next time you open the GUI or console walkthrough. Reviewing the banner (or opening the walkthrough) clears the flag either way; a new option only turns on if you explicitly enable it.
 
