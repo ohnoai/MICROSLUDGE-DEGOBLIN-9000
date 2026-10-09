@@ -1,0 +1,4 @@
+# squelch lock: Joey owns every file, so only his approval counts on a pull
+# request (the ruleset requires a code owner's review). Changing this file is a
+# protected change: squelch-check fails it, and Joey merges it himself.
+* @ohnoai
